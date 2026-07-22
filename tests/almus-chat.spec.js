@@ -1,16 +1,19 @@
 // @ts-check
 import { test, expect } from '@playwright/test';
-import { seedAiKey } from './helpers.js';
 
 // Съответства на TC-25, TC-26 от qa-docs/TEST_CASES.md
 // Регресионен тест за фиксирания бъг: визитьорският чат преди винаги
 // ползваше хардкоднат placeholder ключ и никога не работеше.
+//
+// Ключът вече живее само на сървъра (process.env.ANTHROPIC_API_KEY) — чатът
+// пътува до /api/ai/chat (same-origin), който в NODE_ENV=test връща canned
+// отговор вместо реална Anthropic заявка (виж proxyAnthropic в server.js).
 
-test('чатът показва ясно съобщение, ако не е конфигуриран API ключ (без реална мрежова заявка)', async ({ page }) => {
-  const apiCalls = [];
-  await page.route('https://api.anthropic.com/**', (route) => {
-    apiCalls.push(route.request().url());
-    route.abort();
+test('чатът показва ясно съобщение, ако сървърът върне "не е конфигуриран"', async ({ page }) => {
+  let apiCalls = 0;
+  await page.route('**/api/ai/chat', (route) => {
+    apiCalls++;
+    route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'AI не е конфигуриран на сървъра.' }) });
   });
 
   await page.goto('/');
@@ -21,27 +24,23 @@ test('чатът показва ясно съобщение, ако не е ко
   await page.locator('#almus-send').click();
 
   await expect(page.locator('.chat-msg.guide').last()).toContainText('музеят още не е отключил разговора');
-  expect(apiCalls, 'не трябва да се прави заявка към Anthropic API без ключ').toHaveLength(0);
+  expect(apiCalls).toBe(1);
 });
 
-test('с конфигуриран ключ чатът праща заявка към Anthropic с реалния ключ (не placeholder-а)', async ({ page }) => {
-  const FAKE_KEY = 'sk-ant-test-fake-key';
-  let capturedKey = null;
-  await page.route('https://api.anthropic.com/**', (route) => {
-    capturedKey = route.request().headers()['x-api-key'];
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ content: [{ text: 'Ave, пътнико!' }] }),
-    });
+test('с конфигуриран ключ чатът получава реален отговор през сървърния proxy (не placeholder)', async ({ page }) => {
+  let sentBody = null;
+  await page.route('**/api/ai/chat', async (route) => {
+    sentBody = route.request().postDataJSON();
+    await route.continue();
   });
 
-  await seedAiKey(page, FAKE_KEY);
   await page.goto('/');
   await page.evaluate(() => window.toggleAlmusChat());
   await page.locator('#almus-input').fill('Кой си ти?');
   await page.locator('#almus-send').click();
 
-  await expect(page.locator('.chat-msg.guide').last()).toContainText('Ave, пътнико!');
-  expect(capturedKey).toBe(FAKE_KEY);
+  // Сървърът (NODE_ENV=test) връща canned отговор вместо реална Anthropic заявка.
+  await expect(page.locator('.chat-msg.guide').last()).toContainText('[TEST MODE]');
+  expect(sentBody.messages[sentBody.messages.length - 1]).toEqual({ role: 'user', content: 'Кой си ти?' });
+  expect(typeof sentBody.system).toBe('string');
 });

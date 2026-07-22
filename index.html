@@ -2096,16 +2096,8 @@ body.light-theme .tl-map-era-badge{background:rgba(255,255,255,.9);color:var(--l
 </script>
 </head>
 <body>
-<script>
-  /* Приложи запазения дизайн шаблон възможно най-рано, за да няма
-     "проблясване" на грешна тема при първо зареждане. */
-  (function(){
-    try {
-      var t = JSON.parse(localStorage.getItem('mlcms_template') || 'null');
-      if (t) document.documentElement.setAttribute('data-template', t);
-    } catch(e){}
-  })();
-</script>
+<!-- [data-template] на <html> се инжектира server-side (виж server/server.js,
+     GET /) — не тук, за да няма "проблясване" на грешна тема при зареждане. -->
 
 <!-- HEADER -->
 <header id="site-header">
@@ -2131,7 +2123,7 @@ body.light-theme .tl-map-era-badge{background:rgba(255,255,255,.9);color:var(--l
     <option value="ru">RU</option>
     <option value="tr">TR</option>
   </select>
-  <button id="admin-nav-btn" onclick="openAdminPanel()" title="Администрация" style="background:transparent;border:1px solid color-mix(in srgb, var(--gold) 25%, transparent);color:var(--gold);font-family:'Cinzel',serif;font-size:.5rem;letter-spacing:.15rem;padding:.28rem .6rem;cursor:pointer;transition:all .3s;border-radius:2px;opacity:.55" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='.55'">ADMIN</button>
+  <button id="admin-nav-btn" onclick="handleAdminNavClick()" title="Администрация" style="background:transparent;border:1px solid color-mix(in srgb, var(--gold) 25%, transparent);color:var(--gold);font-family:'Cinzel',serif;font-size:.5rem;letter-spacing:.15rem;padding:.28rem .6rem;cursor:pointer;transition:all .3s;border-radius:2px;opacity:.55" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='.55'">ADMIN</button>
   <button id="theme-toggle" onclick="toggleTheme()" title="Превключи тема">☀</button>
 </header>
 
@@ -4862,10 +4854,6 @@ function toggleTheme(){
 <script>
 /* ── AI ГИДЪТ АЛМУС ── */
 (function(){
-  // Ползва същия ключ, който admin запазва през AI панела (localStorage 'mlcms_ai_key') —
-  // преди тази поправка тук стоеше хардкоднат placeholder, който никога не се презаписваше,
-  // затова визитьорският чат винаги правеше неуспешна заявка независимо от admin настройките.
-  function getAlmusKey(){ return localStorage.getItem('mlcms_ai_key') || ''; }
 
   var SYSTEM_PROMPT = `Ти си Алмус — духът на древната римска крепост при река Данубий (Дунав), днешния град Лом, България. Говориш от гледна точка на пазителя на тази крепост, основана около 29 г. сл. Хр.
 
@@ -4945,32 +4933,26 @@ function toggleTheme(){
     addMessage('user', text);
     messages.push({role:'user', content: text});
 
-    var key = getAlmusKey();
-    if(!key){
-      addMessage('guide', 'Гласът ми е скрит зад мъгла — музеят още не е отключил разговора. Опитайте по-късно.');
-      return;
-    }
-
     showTyping();
     isLoading = true;
     document.getElementById('almus-send').disabled = true;
 
-    fetch('https://api.anthropic.com/v1/messages', {
+    // Ключът живее само на сървъра (process.env) — тук не подаваме никакъв
+    // ключ, само system prompt-а и историята на разговора.
+    fetch('/api/ai/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 300,
         system: SYSTEM_PROMPT,
         messages: messages.slice(-10) // last 10 messages for context
       })
     })
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if(!r.ok){
+        return r.json().catch(function(){ return {}; }).then(function(){ throw new Error('not-configured'); });
+      }
+      return r.json();
+    })
     .then(function(data){
       hideTyping();
       var reply = data.content && data.content[0] && data.content[0].text;
@@ -4983,9 +4965,13 @@ function toggleTheme(){
         if(lastBtn) setTimeout(function(){ lastBtn.click(); }, 200);
       }
     })
-    .catch(function(){
+    .catch(function(e){
       hideTyping();
-      addMessage('guide', 'Сигналите от Данубий са прекъснати... Провери API ключа или интернет връзката.');
+      if (e && e.message === 'not-configured') {
+        addMessage('guide', 'Гласът ми е скрит зад мъгла — музеят още не е отключил разговора. Опитайте по-късно.');
+      } else {
+        addMessage('guide', 'Сигналите от Данубий са прекъснати... Провери интернет връзката.');
+      }
     })
     .finally(function(){
       isLoading = false;
@@ -6620,16 +6606,15 @@ document.querySelectorAll('nav a').forEach(function(a){
 
       <!-- API Key настройка -->
       <div id="adm-ai-setup" style="background:color-mix(in srgb, var(--gold) 5%, transparent);border:1px solid color-mix(in srgb, var(--gold) 20%, transparent);border-radius:3px;padding:1.2rem 1.4rem;margin-bottom:1.8rem">
-        <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:.8rem">
+        <div style="display:flex;align-items:center;gap:.8rem">
           <span id="adm-ai-key-status" style="font-size:1.1rem">🔴</span>
           <span style="font-family:'Cinzel',serif;font-size:.52rem;letter-spacing:.15rem;color:var(--gold)">ANTHROPIC API КЛЮЧ</span>
         </div>
-        <div style="display:flex;gap:.6rem">
-          <input type="password" id="adm-ai-key-input" placeholder="sk-ant-..." style="flex:1;background:rgba(255,255,255,.04);border:1px solid color-mix(in srgb, var(--gold) 18%, transparent);color:var(--cream);font-family:'EB Garamond',serif;font-size:.95rem;padding:.5rem .75rem;border-radius:2px;outline:none">
-          <button onclick="saveAiKey()" style="background:color-mix(in srgb, var(--gold) 12%, transparent);border:1px solid color-mix(in srgb, var(--gold) 35%, transparent);color:var(--gold);font-family:'Cinzel',serif;font-size:.5rem;letter-spacing:.12rem;padding:.5rem .9rem;cursor:pointer;border-radius:2px;white-space:nowrap">ЗАПАЗИ</button>
-          <button onclick="clearAiKey()" style="background:transparent;border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.35);font-family:'Cinzel',serif;font-size:.5rem;padding:.5rem .7rem;cursor:pointer;border-radius:2px" title="Изтрий ключа">✕</button>
-        </div>
-        <p style="font-size:.78rem;color:rgba(255,255,255,.3);margin-top:.6rem">Ключът се пази само в браузъра ви. Вземете го от <a href="https://console.anthropic.com" target="_blank" style="color:color-mix(in srgb, var(--gold) 60%, transparent);text-decoration:none">console.anthropic.com</a></p>
+        <p style="font-size:.78rem;color:rgba(255,255,255,.3);margin-top:.6rem">
+          Ключът вече се пази само на сървъра (environment variable), не в браузъра —
+          за да го смениш/добавиш, редактирай <code>server/.env</code> и рестартирай сървъра.
+          Виж <code>server/.env.example</code>.
+        </p>
       </div>
 
       <!-- Режим -->
@@ -7073,21 +7058,31 @@ body.light-theme .event-card-date{color:var(--light-accent)}
   function renderTemplateGrid(){
     const grid = document.getElementById('design-template-grid');
     if(!grid) return;
-    const active = getData('template', 'roman');
-    grid.innerHTML = TEMPLATES.map(function(t){
-      return '<div class="design-template-card' + (t.key===active?' active':'') + '" onclick="selectTemplate(\'' + t.key + '\')">' +
-        '<div class="design-template-swatch"><span style="background:' + t.dark + '"></span><span style="background:' + t.gold + '"></span></div>' +
-        '<div class="design-template-name">' + t.icon + ' ' + t.name +
-        (t.key===active ? '<span class="design-template-active-badge">✓</span>' : '') +
-        '</div></div>';
-    }).join('');
+    fetch('/api/settings/template').then(function(r){ return r.json(); }).then(function(data){
+      const active = data.value || 'roman';
+      grid.innerHTML = TEMPLATES.map(function(t){
+        return '<div class="design-template-card' + (t.key===active?' active':'') + '" onclick="selectTemplate(\'' + t.key + '\')">' +
+          '<div class="design-template-swatch"><span style="background:' + t.dark + '"></span><span style="background:' + t.gold + '"></span></div>' +
+          '<div class="design-template-name">' + t.icon + ' ' + t.name +
+          (t.key===active ? '<span class="design-template-active-badge">✓</span>' : '') +
+          '</div></div>';
+      }).join('');
+    });
   }
 
   window.selectTemplate = function(key){
-    document.documentElement.setAttribute('data-template', key);
-    setData('template', key);
-    renderTemplateGrid();
-    showMsg('adm-design-msg', '✓ Шаблонът е приложен за всички посетители.', true);
+    fetch('/api/settings/template', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: key })
+    }).then(function(r){
+      if(!r.ok) throw new Error('unauthorized');
+      document.documentElement.setAttribute('data-template', key);
+      renderTemplateGrid();
+      showMsg('adm-design-msg', '✓ Шаблонът е приложен за всички посетители.', true);
+    }).catch(function(){
+      showMsg('adm-design-msg', '⚠ Грешка — сесията може да е изтекла.', false);
+    });
   };
 
   window.openAdminLogin = function(){
@@ -7103,15 +7098,34 @@ body.light-theme .event-card-date{color:var(--light-accent)}
   window.tryAdminLogin = async function(){
     const pwd = document.getElementById('admin-pwd-input').value;
     if(!pwd){ document.getElementById('admin-login-err').textContent = 'Въведете парола.'; return; }
-    const hash = await sha256(pwd);
-    const stored = getData('pwd_hash', DEFAULT_HASH);
-    if(hash === stored){
-      closeAdminLogin();
-      openAdminPanel();
-    } else {
-      document.getElementById('admin-login-err').textContent = 'Грешна парола.';
-      document.getElementById('admin-pwd-input').value = '';
+    try {
+      const r = await fetch('/api/login', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ password: pwd })
+      });
+      const data = await r.json();
+      if (r.ok) {
+        closeAdminLogin();
+        openAdminPanel();
+      } else {
+        document.getElementById('admin-login-err').textContent = data.error || 'Грешна парола.';
+        document.getElementById('admin-pwd-input').value = '';
+      }
+    } catch(e) {
+      document.getElementById('admin-login-err').textContent = 'Сървърът не е достъпен.';
     }
+  };
+
+  /* ── Admin навигационен бутон — проверява реална сесия преди достъп
+     (fail-closed: при грешка в заявката се показва login, не панела) ── */
+  window.handleAdminNavClick = async function(){
+    try {
+      const r = await fetch('/api/session');
+      const data = await r.json();
+      if (data.isAdmin) { openAdminPanel(); return; }
+    } catch(e){}
+    openAdminLogin();
   };
 
   /* ── Admin панел ── */
@@ -7121,6 +7135,7 @@ body.light-theme .event-card-date{color:var(--light-accent)}
     loadAllAdminData();
   };
   window.closeAdminPanel = function(){
+    fetch('/api/logout', { method: 'POST' }).catch(()=>{});
     document.getElementById('admin-panel').style.display = 'none';
     document.body.style.overflow = '';
   };
@@ -7411,13 +7426,19 @@ body.light-theme .event-card-date{color:var(--light-accent)}
     if(!oldPwd||!newPwd||!confirm){ showMsg('adm-pwd-msg','⚠ Попълнете всички полета.',false); return; }
     if(newPwd !== confirm){ showMsg('adm-pwd-msg','⚠ Новата парола не съвпада.',false); return; }
     if(newPwd.length < 6){ showMsg('adm-pwd-msg','⚠ Паролата трябва да е поне 6 символа.',false); return; }
-    const oldHash = await sha256(oldPwd);
-    const stored  = getData('pwd_hash', DEFAULT_HASH);
-    if(oldHash !== stored){ showMsg('adm-pwd-msg','⚠ Грешна текуща парола.',false); return; }
-    const newHash = await sha256(newPwd);
-    setData('pwd_hash', newHash);
-    setVal('adm-pwd-old',''); setVal('adm-pwd-new',''); setVal('adm-pwd-confirm','');
-    showMsg('adm-pwd-msg','✓ Паролата е сменена успешно.',true);
+    try {
+      const r = await fetch('/api/change-password', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd, confirm })
+      });
+      const data = await r.json();
+      if (!r.ok) { showMsg('adm-pwd-msg', '⚠ ' + (data.error || 'Грешка.'), false); return; }
+      setVal('adm-pwd-old',''); setVal('adm-pwd-new',''); setVal('adm-pwd-confirm','');
+      showMsg('adm-pwd-msg','✓ Паролата е сменена успешно.',true);
+    } catch(e) {
+      showMsg('adm-pwd-msg', '⚠ Сървърът не е достъпен.', false);
+    }
   };
 
   /* ── Helpers ── */
@@ -7704,27 +7725,14 @@ body.light-theme .event-card-date{color:var(--light-accent)}
   };
 
   /* ── API Key management ── */
-  function getKey(){ return localStorage.getItem('mlcms_ai_key') || ''; }
-
-  window.saveAiKey = function(){
-    var val = document.getElementById('adm-ai-key-input').value.trim();
-    if(!val){ showAiMsg('⚠ Въведете API ключ.', false); return; }
-    localStorage.setItem('mlcms_ai_key', val);
-    document.getElementById('adm-ai-key-input').value = '';
-    updateKeyStatus();
-    showAiMsg('✓ API ключът е запазен.', true);
-  };
-
-  window.clearAiKey = function(){
-    localStorage.removeItem('mlcms_ai_key');
-    updateKeyStatus();
-    showAiMsg('Ключът е изтрит.', true);
-  };
-
+  // Ключът вече живее само на сървъра (process.env.ANTHROPIC_API_KEY) — тук
+  // само проверяваме дали е конфигуриран, никога не го пазим/виждаме client-side.
   function updateKeyStatus(){
     var el = document.getElementById('adm-ai-key-status');
     if(!el) return;
-    el.textContent = getKey() ? '🟢' : '🔴';
+    fetch('/api/ai/status').then(function(r){ return r.json(); }).then(function(data){
+      el.textContent = data.configured ? '🟢' : '🔴';
+    }).catch(function(){ el.textContent = '🔴'; });
   }
 
   /* ── Режими ── */
@@ -7744,13 +7752,8 @@ body.light-theme .event-card-date{color:var(--light-accent)}
 
   /* ── Генерирай ── */
   window.runAiGenerate = function(){
-    var key   = getKey();
     var input = (document.getElementById('adm-ai-input').value || '').trim();
 
-    if(!key){
-      showAiMsg('⚠ Добавете Anthropic API ключ по-горе.', false);
-      return;
-    }
     if(!input){
       showAiMsg('⚠ Опишете накратко какво искате.', false);
       return;
@@ -7766,22 +7769,17 @@ body.light-theme .event-card-date{color:var(--light-accent)}
 
     var prompt = buildPrompt(currentMode, input);
 
-    fetch('https://api.anthropic.com/v1/messages', {
+    // Ключът се пази само на сървъра — тук пращаме само system prompt-а и заявката.
+    fetch('/api/ai/generate', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 600,
-        system: SYSTEM,
-        messages: [{ role: 'user', content: prompt }]
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ system: SYSTEM, prompt: prompt })
     })
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if(r.status === 503) throw new Error('Не е добавен Anthropic API ключ на сървъра.');
+      if(r.status === 401) throw new Error('Сесията е изтекла — влез отново.');
+      return r.json();
+    })
     .then(function(data){
       var raw = data.content && data.content[0] && data.content[0].text;
       if(!raw) throw new Error('Празен отговор');
@@ -7793,7 +7791,7 @@ body.light-theme .event-card-date{color:var(--light-accent)}
       renderResult(parsed);
     })
     .catch(function(err){
-      showAiMsg('⚠ Грешка: ' + (err.message||'Проверете API ключа и интернет връзката.'), false);
+      showAiMsg('⚠ Грешка: ' + (err.message||'Проверете интернет връзката.'), false);
     })
     .finally(function(){
       btn.disabled = false;

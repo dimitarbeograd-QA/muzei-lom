@@ -3,6 +3,24 @@
 Форматът следва приблизително [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+### Security
+- **Критично:** видимият `#admin-nav-btn` ("ADMIN" бутон в header-а) викаше
+  `openAdminPanel()` директно, без изобщо да минава login gate-а — всеки
+  посетител е влизал в admin панела само с едно кликване, без парола, без
+  console/DevTools. Открито чрез реален клик тест (не само чрез директно
+  извикване на функциите). Фиксирано — вика `handleAdminNavClick()`, който
+  проверява сървърна сесия.
+- **Реален backend за автентикация и AI ключ** (`server/` — Express +
+  SQLite + bcrypt): admin паролата вече се проверява server-side (`POST
+  /api/login`, httpOnly cookie сесия), вместо client-side SHA-256 сравнение
+  в localStorage. Anthropic API ключът живее само в `server/.env` — и
+  визитьорският чат, и admin AI генераторът минават през сървърен proxy
+  (`/api/ai/chat`, `/api/ai/generate`), ключът никога не стига до
+  браузъра. Дизайн темплейтът вече е SQLite `settings` запис (реално
+  сайт-широк), не localStorage (беше само per-browser въпреки че се
+  представяше за "сайт-широко"). Виж `ARCHITECTURE.md#backend`,
+  `SECURITY.md`.
+
 ### Fixed
 - **Критично:** Секцията "3D Алмус" беше напълно нефункционална за всеки
   посетител — `initScene()` хвърляше грешка при `new
@@ -32,8 +50,9 @@
   Тракийска епоха, Средновековие, Османска епоха, Съвременност. Всеки
   работи в тъмна и светла тема, desktop и мобилно (същия responsive CSS,
   само сменени цветови променливи). Избраният шаблон важи сайт-широко за
-  всички посетители (persist в `localStorage['mlcms_template']`), за
-  разлика от `theme-toggle` (light/dark), който си остава per-visitor избор.
+  всички посетители (persist server-side в SQLite, виж Security секцията
+  по-горе), за разлика от `theme-toggle` (light/dark), който си остава
+  per-visitor избор.
   Техническа реализация: цветовата система на `index.html` беше почти
   изцяло hardcoded (370+ `rgba()`/hex литерала извън 8-те CSS променливи,
   68 отделни `body.light-theme` override правила) — рефакторирана в пълна

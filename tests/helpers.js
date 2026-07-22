@@ -22,16 +22,24 @@ export async function seedEvent(page, event) {
   }, [evs]);
 }
 
-/** Сийдва admin-конфигуриран Anthropic API ключ (localStorage['mlcms_ai_key']). */
-export async function seedAiKey(page, key = 'sk-ant-test-fake-key') {
-  await page.addInitScript(([k]) => {
-    localStorage.setItem('mlcms_ai_key', k);
-  }, [key]);
-}
-
 /** Отваря admin login модала и въвежда парола (не логва — само submit-ва формата). */
 export async function submitAdminLogin(page, password) {
   await page.evaluate(() => window.openAdminLogin());
   await page.locator('#admin-pwd-input').fill(password);
   await page.evaluate(() => window.tryAdminLogin());
+}
+
+/**
+ * Връща сървърния SQLite state (admin парола, settings) към default seed и
+ * унищожава текущата сесия — вика POST /api/test/reset (само налично при
+ * NODE_ENV=test, виж server/server.js). За разлика от localStorage/предишния
+ * дизайн, backend-ът пази реално споделено state между тестовете, затова
+ * тестове, които мутират admin паролата или темплейта, трябва да викат това
+ * в beforeEach, за да са независими от реда на изпълнение.
+ */
+export async function resetServerState(request) {
+  const res = await request.post('/api/test/reset');
+  if (!res.ok()) {
+    throw new Error('POST /api/test/reset failed — сървърът стартиран ли е с NODE_ENV=test?');
+  }
 }
