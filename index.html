@@ -4804,7 +4804,10 @@ function toggleTheme(){
 <script>
 /* ── AI ГИДЪТ АЛМУС ── */
 (function(){
-  var ALMUS_KEY = 'YOUR_ANTHROPIC_API_KEY'; // Сменете с реален ключ от console.anthropic.com
+  // Ползва същия ключ, който admin запазва през AI панела (localStorage 'mlcms_ai_key') —
+  // преди тази поправка тук стоеше хардкоднат placeholder, който никога не се презаписваше,
+  // затова визитьорският чат винаги правеше неуспешна заявка независимо от admin настройките.
+  function getAlmusKey(){ return localStorage.getItem('mlcms_ai_key') || ''; }
 
   var SYSTEM_PROMPT = `Ти си Алмус — духът на древната римска крепост при река Данубий (Дунав), днешния град Лом, България. Говориш от гледна точка на пазителя на тази крепост, основана около 29 г. сл. Хр.
 
@@ -4883,6 +4886,13 @@ function toggleTheme(){
     document.getElementById('almus-suggestions').style.display = 'none';
     addMessage('user', text);
     messages.push({role:'user', content: text});
+
+    var key = getAlmusKey();
+    if(!key){
+      addMessage('guide', 'Гласът ми е скрит зад мъгла — музеят още не е отключил разговора. Опитайте по-късно.');
+      return;
+    }
+
     showTyping();
     isLoading = true;
     document.getElementById('almus-send').disabled = true;
@@ -4891,7 +4901,7 @@ function toggleTheme(){
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ALMUS_KEY,
+        'x-api-key': key,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       },
@@ -5288,10 +5298,6 @@ document.querySelectorAll('nav a').forEach(function(a){
     var scene = new B.Scene(engine);
     scene.clearColor = new B.Color4(0.08, 0.12, 0.18, 1);
     scene.ambientColor = new B.Color3(0.1, 0.08, 0.05);
-
-    /* ── PBR Environment (skybox HDR-like с градиент) ── */
-    var hdrHelper = new B.CubeTexture.CreateFromPrefilteredData
-      ? null : null;
 
     /* Fog */
     scene.fogMode = B.Scene.FOGMODE_EXP2;
@@ -6967,8 +6973,9 @@ body.light-theme .event-card-date{color:#745515}
   function fmtDate(iso){ try{ return new Date(iso).toLocaleDateString('bg-BG',{day:'numeric',month:'long',year:'numeric'}); }catch(e){ return iso||''; } }
   function typeLabel(t){ return {news:'📰 Новина',event:'📅 Събитие',notice:'📢 Съобщение'}[t]||'📰 Новина'; }
 
-  /* Default парола hash (Admin2025!) — администраторът трябва да я смени */
-  const DEFAULT_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'; // admin
+  /* SHA-256 hash на default паролата "admin" — тривиална, администраторът
+     ТРЯБВА да я смени веднага през панела „Смени парола". */
+  const DEFAULT_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
 
   /* ── Автентикация ── */
   window.openAdminLogin = function(){
