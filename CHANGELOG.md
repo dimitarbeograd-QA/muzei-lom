@@ -27,6 +27,20 @@
   ключ в plaintext localStorage и изпращането му directly от браузъра.
 
 ### Added
+- **6 дизайн шаблона** за целия сайт (admin панел → таб "Дизайн"), по мотив
+  на 6-те епохи от Хронологията — Римска епоха (default), Праистория,
+  Тракийска епоха, Средновековие, Османска епоха, Съвременност. Всеки
+  работи в тъмна и светла тема, desktop и мобилно (същия responsive CSS,
+  само сменени цветови променливи). Избраният шаблон важи сайт-широко за
+  всички посетители (persist в `localStorage['mlcms_template']`), за
+  разлика от `theme-toggle` (light/dark), който си остава per-visitor избор.
+  Техническа реализация: цветовата система на `index.html` беше почти
+  изцяло hardcoded (370+ `rgba()`/hex литерала извън 8-те CSS променливи,
+  68 отделни `body.light-theme` override правила) — рефакторирана в пълна
+  CSS variable/`color-mix()` система, за да могат темплейтите да работят
+  като чисто variable overrides без риск за визуален regression
+  (default темплейтът е проверен да рендира идентично на преди).
+- Playwright тестове за темплейт системата (`tests/design-templates.spec.js`).
 - Пълна QA документация (`qa-docs/TEST_PLAN.md`, `TEST_CASES.md`) и bug report темплейт.
 - Технически документи: `README.md`, `ARCHITECTURE.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`.
 
